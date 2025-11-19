@@ -39,14 +39,37 @@ def telegram_webhook():
 
 
 # ---------------------------
+# 🧹 Cleanup on startup
+# ---------------------------
+def cleanup():
+    for f in os.listdir("."):
+        if f.endswith(".part") or "Frag" in f:
+            try:
+                os.remove(f)
+            except:
+                pass
+
+cleanup()
+
+
+# ---------------------------
 # ⚙️ YDL Options
 # ---------------------------
 def get_ydl_opts():
     return {
-        "format": "best/bestvideo+bestaudio/best",
+        # 🔥 إصلاح مشكلة Requested format
+        "format_sort": ["vcodec:h264", "res", "acodec:aac"],
+
+        # 🔥 منع الفيديوهات الكبيرة (يوقف قبل التحميل)
+        "max_filesize": 250 * 1024 * 1024,  # 250MB
+
+        # 🔥 منع التعليق في Render
+        "concurrent_fragment_downloads": 1,
+
         "outtmpl": "%(title)s.%(ext)s",
         "quiet": True,
         "noplaylist": True,
+
         "cookiefile": "cookies.txt" if os.path.exists("cookies.txt") else None,
 
         "postprocessors": [{
@@ -54,10 +77,9 @@ def get_ydl_opts():
             "preferedformat": "mp4"
         }],
 
-        # تمكين mweb client للـ PO Token
         "extractor_args": {
             "youtube": {
-                "player_client": "mweb"
+                "player_client": ["mweb", "web"]
             }
         }
     }
@@ -83,6 +105,13 @@ def download(update, context):
             filename = ydl.prepare_filename(info)
 
         update.message.reply_document(open(filename, "rb"))
+
+        # حذف الملف بعد الإرسال
+        try:
+            os.remove(filename)
+        except:
+            pass
+
     except Exception as e:
         update.message.reply_text(f"❌ حدث خطأ:\n{e}")
 
