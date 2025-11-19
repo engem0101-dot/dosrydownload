@@ -4,79 +4,56 @@ from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
 from telegram import ChatAction
 import yt_dlp
 
-# ============================
-#   إعدادات عامة
-# ============================
-TOKEN = os.getenv("BOT_TOKEN")  # ضع التوكن في Render Environment
-COOKIES_PATH = "cookies.txt"    # بدون مجلدات
+# Load ENV variables
+TOKEN = os.getenv("BOT_TOKEN")
+APP_URL = os.getenv("APP_URL")
+PORT = int(os.getenv("PORT", 10000))
 
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
+logging.basicConfig(level=logging.INFO)
 
-logger = logging.getLogger(__name__)
-
-
-# ============================
-#   إعداد yt-dlp مع Cookies
-# ============================
 def get_ydl_opts():
     return {
         "outtmpl": "%(title)s.%(ext)s",
-        "cookies": COOKIES_PATH,
         "format": "best",
-        "noprogress": True,
-        "quiet": True,
-        "nocheckcertificate": True,
+        "cookiefile": "cookies.txt",
+        "cookies": "cookies.txt",
         "extractor_args": {
             "youtube": {
                 "player_client": "mweb",
             }
         },
+        "quiet": True,
+        "noprogress": True,
         "http_headers": {
             "User-Agent": "Mozilla/5.0",
         }
     }
 
-
-# ============================
-#   الدوال الأساسية
-# ============================
 def start(update, context):
-    update.message.reply_text("أرسل رابط الفيديو لتحميله 🎬")
-
+    update.message.reply_text("أرسل رابط يوتيوب لتحميله 🎥")
 
 def download(update, context):
     url = update.message.text.strip()
-
     update.message.reply_chat_action(ChatAction.TYPING)
-    update.message.reply_text("⏳ جاري معالجة الرابط...")
+    update.message.reply_text("⏳ جاري التحميل...")
 
     try:
-        ydl_opts = get_ydl_opts()
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        with yt_dlp.YoutubeDL(get_ydl_opts()) as ydl:
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
 
         update.message.reply_document(open(filename, "rb"))
     except Exception as e:
-        update.message.reply_text(f"❌ حدث خطأ: {e}")
+        update.message.reply_text(f"❌ خطأ: {e}")
 
-
-# ============================
-#   تشغيل Webhook في Render
-# ============================
 def main():
-    PORT = int(os.environ.get("PORT", 8080))
-    APP_URL = os.environ.get("APP_URL")  # مثال: https://yourbot.onrender.com
-
     updater = Updater(TOKEN, use_context=True)
     dp = updater.dispatcher
 
     dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(MessageHandler(Filters.text & ~Filters.command, download))
+    dp.add_handler(MessageHandler(Filters.text, download))
 
+    # Start webhook
     updater.start_webhook(
         listen="0.0.0.0",
         port=PORT,
@@ -85,7 +62,6 @@ def main():
     )
 
     updater.idle()
-
 
 if __name__ == "__main__":
     main()
