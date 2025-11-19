@@ -4,6 +4,7 @@ from flask import Flask, request
 from telegram import Bot, Update
 from telegram.ext import Dispatcher, CommandHandler, MessageHandler, Filters
 import yt_dlp
+import glob
 
 # ---------------------------
 # 🔐 ENV variables
@@ -39,17 +40,17 @@ def telegram_webhook():
 
 
 # ---------------------------
-# 🧹 Cleanup on startup
+# ✨ تنظيف فوري للملفات العالقة
 # ---------------------------
-def cleanup():
-    for f in os.listdir("."):
-        if f.endswith(".part") or "Frag" in f:
+def cleanup_temp_files():
+    patterns = ["*.part", "*.part-Frag*", "*.part-Frag*.part"]
+
+    for p in patterns:
+        for f in glob.glob(p):
             try:
                 os.remove(f)
             except:
                 pass
-
-cleanup()
 
 
 # ---------------------------
@@ -57,29 +58,18 @@ cleanup()
 # ---------------------------
 def get_ydl_opts():
     return {
-        # 🔥 إصلاح مشكلة Requested format
-        "format_sort": ["vcodec:h264", "res", "acodec:aac"],
-
-        # 🔥 منع الفيديوهات الكبيرة (يوقف قبل التحميل)
-        "max_filesize": 250 * 1024 * 1024,  # 250MB
-
-        # 🔥 منع التعليق في Render
-        "concurrent_fragment_downloads": 1,
-
+        "format": "best/bestvideo+bestaudio/best",
         "outtmpl": "%(title)s.%(ext)s",
         "quiet": True,
         "noplaylist": True,
-
         "cookiefile": "cookies.txt" if os.path.exists("cookies.txt") else None,
-
         "postprocessors": [{
             "key": "FFmpegVideoConvertor",
             "preferedformat": "mp4"
         }],
-
         "extractor_args": {
             "youtube": {
-                "player_client": ["mweb", "web"]
+                "player_client": "mweb"
             }
         }
     }
@@ -99,21 +89,36 @@ def download(update, context):
     url = update.message.text.strip()
     update.message.reply_text("⏳ جاري التحميل…")
 
+    # تنظيف قبل أن يبدأ أي تحميل
+    cleanup_temp_files()
+
     try:
         with yt_dlp.YoutubeDL(get_ydl_opts()) as ydl:
+            info = ydl.extract_info(url, download=False)
+
+            # ---------------------------
+            # 🚫 منع تحميل الملفات الكبيرة
+            # ---------------------------
+            size = info.get("filesize") or info.get("filesize_approx") or 0
+            if size > 300 * 1024 * 1024:   # هنا الحد 300MB
+                update.message.reply_text(
+                    f"❌ الملف كبير جداً ولا يمكن تحميله.\n"
+                    f"الحجم: {round(size / 1024 / 1024)}MB"
+                )
+                return
+
+            # إذا الحجم مناسب → حمله
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
 
         update.message.reply_document(open(filename, "rb"))
 
-        # حذف الملف بعد الإرسال
-        try:
-            os.remove(filename)
-        except:
-            pass
+        # بعد الإرسال → نظف الملفات المعلقة
+        cleanup_temp_files()
 
     except Exception as e:
         update.message.reply_text(f"❌ حدث خطأ:\n{e}")
+        cleanup_temp_files()
 
 
 # ---------------------------
