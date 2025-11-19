@@ -14,12 +14,13 @@ import yt_dlp
 TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.getenv("PORT", 10000))
 
-# دومين التطبيق (لتوليد روابط التحميل)
+# رابط الدومين الخاص بالتحميل
 APP_DOMAIN = os.getenv("APP_DOMAIN", "https://dosrydownload.onrender.com")
 
-# مجلد التحميلات
+# مجلد التخزين
 DOWNLOAD_FOLDER = "downloads"
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
+
 
 # ---------------------------
 # 📝 Logging
@@ -28,38 +29,45 @@ os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
 # ---------------------------
-# ⚙️ yt-dlp Settings
+# ⚙️ yt-dlp Settings (الأفضل والأكثر استقراراً)
 # ---------------------------
 
 def ydl_opts(output_path):
     return {
-        "format": "bv*[ext=mp4]+ba[ext=m4a]/bv*+ba/best",
+        # Sorting بدلاً من format لتفادي errors
+        "format_sort": ["vcodec:h264", "res", "acodec:aac"],
+
         "outtmpl": output_path,
         "merge_output_format": "mp4",
         "noplaylist": True,
         "quiet": True,
+        "no_warnings": True,
+
+        # كوكيز يوتيوب
         "cookiefile": "cookies.txt" if os.path.exists("cookies.txt") else None,
+
+        # تفعيل mweb لضمان PO Token
         "extractor_args": {
             "youtube": {
                 "player_client": ["mweb", "web"]
             }
-        }
+        },
     }
 
 
-
 # ---------------------------
-# 🧹 Auto-delete files
+# 🧹 Auto delete
 # ---------------------------
 
 def auto_delete(filepath, delay=600):
-    """يحذف الملفات بعد 10 دقائق"""
+    """Delete file after 10 minutes"""
     def delete():
         try:
             if os.path.exists(filepath):
                 os.remove(filepath)
-                logger.info(f"🗑️ Deleted: {filepath}")
+                logger.info(f"🗑 Deleted: {filepath}")
         except Exception as e:
             logger.error(f"Delete error: {e}")
 
@@ -67,17 +75,20 @@ def auto_delete(filepath, delay=600):
     t.daemon = True
     t.start()
 
+
 # ---------------------------
 # 🤖 Telegram Handlers
 # ---------------------------
 
 def start(update, context):
     update.message.reply_text(
-        "🎬 أهلاً! أرسل رابط فيديو وسأقوم بتحميله:\n"
-        "• YouTube\n• TikTok\n• Instagram\n• Twitter\n• Facebook\n"
-        "✔ إذا الحجم أقل من 50MB سيتم إرساله مباشرة\n"
-        "✔ إذا أكبر سأرسل لك رابط تحميل مباشر"
+        "🎬 *أرسل رابط أي فيديو وسأقوم بتحميله:*\n"
+        "• YouTube\n• TikTok (بدون علامة مائية)\n• Instagram\n• Twitter\n• Facebook\n\n"
+        "✔ إذا الحجم أقل من 50MB أرسل لك الفيديو مباشر\n"
+        "✔ إذا أكبر من 50MB أرسل رابط تحميل مباشر\n",
+        parse_mode="Markdown"
     )
+
 
 def handle_download(update, context):
     url = update.message.text.strip()
@@ -92,6 +103,7 @@ def handle_download(update, context):
         file_id = str(uuid.uuid4())
         output_tpl = os.path.join(DOWNLOAD_FOLDER, f"{file_id}.%(ext)s")
 
+        # Download
         with yt_dlp.YoutubeDL(ydl_opts(output_tpl)) as ydl:
             info = ydl.extract_info(url, download=True)
             filepath = ydl.prepare_filename(info)
@@ -99,24 +111,26 @@ def handle_download(update, context):
         size = os.path.getsize(filepath)
 
         if size <= 50 * 1024 * 1024:
-            # √ الملف صغير → أرسله مباشرة
-            update.message.reply_video(open(filepath, "rb"))
+            # Send file directly
+            update.message.reply_document(open(filepath, "rb"))
             auto_delete(filepath)
         else:
-            # √ الملف كبير → رابط تحميل مباشر
+            # Send download link
             download_url = f"{APP_DOMAIN}/d/{file_id}"
             update.message.reply_text(
-                f"🔗 **ملف كبير > 50MB**\n"
-                f"رابط التحميل:\n{download_url}\n\n"
-                "⏰ الرابط صالح لمدة 10 دقائق"
+                f"📥 **الملف كبير (> 50MB)**\n"
+                f"رابط التحميل المباشر:\n{download_url}\n\n"
+                "⏰ الرابط صالح لمدة 10 دقائق",
+                parse_mode="Markdown"
             )
             auto_delete(filepath)
 
         msg.delete()
 
     except Exception as e:
+        update.message.reply_text(f"❌ حدث خطأ:\n{e}")
         logger.error(e)
-        update.message.reply_text(f"❌ خطأ أثناء التحميل:\n{e}")
+
 
 # ---------------------------
 # 🌐 Flask Server
@@ -130,6 +144,7 @@ def home():
 
 @app.route("/d/<file_id>")
 def download_file(file_id):
+    # البحث عن الملف
     search = [f for f in os.listdir(DOWNLOAD_FOLDER) if f.startswith(file_id)]
     if not search:
         return abort(404)
@@ -137,8 +152,9 @@ def download_file(file_id):
     full_path = os.path.join(DOWNLOAD_FOLDER, search[0])
     return send_file(full_path, as_attachment=True)
 
+
 # ---------------------------
-# 🚀 Start POLLING (بدون Webhook)
+# 🚀 Start Telegram Bot (Polling)
 # ---------------------------
 
 def run_bot():
@@ -151,13 +167,11 @@ def run_bot():
     updater.start_polling()
     updater.idle()
 
+
 # ---------------------------
-# 🚀 Run Flask + Bot together
+# 🚀 Run Flask + Bot
 # ---------------------------
 
 if __name__ == "__main__":
     threading.Thread(target=run_bot, daemon=True).start()
     app.run(host="0.0.0.0", port=PORT)
-
-
-
