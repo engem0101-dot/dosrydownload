@@ -1,11 +1,21 @@
 import os
 import logging
-from flask import Flask
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
+from flask import Flask, request
+from telegram import Bot, Update
+from telegram.ext import Dispatcher, CommandHandler, MessageHandler, Filters
 import yt_dlp
 
 # ---------------------------
-# 🚀 Flask server (Render)
+# 🔐 ENV variables
+# ---------------------------
+TOKEN = os.getenv("BOT_TOKEN")
+APP_URL = os.getenv("APP_URL")
+PORT = int(os.getenv("PORT", 10000))
+
+bot = Bot(token=TOKEN)
+
+# ---------------------------
+# 🚀 Flask App
 # ---------------------------
 app = Flask(__name__)
 
@@ -17,19 +27,19 @@ def home():
 def health():
     return "OK", 200
 
+@app.route(f"/{TOKEN}", methods=["POST"])
+def telegram_webhook():
+    try:
+        update = Update.de_json(request.get_json(force=True), bot)
+        dispatcher.process_update(update)
+    except Exception as e:
+        print("Webhook error:", e)
+
+    return "OK", 200
+
 
 # ---------------------------
-# 🔐 ENV variables
-# ---------------------------
-TOKEN = os.getenv("BOT_TOKEN")
-APP_URL = os.getenv("APP_URL")
-PORT = int(os.getenv("PORT", 10000))
-
-logging.basicConfig(level=logging.INFO)
-
-
-# ---------------------------
-# ⚙️ YDL Options — Multi-platform
+# ⚙️ YDL Options
 # ---------------------------
 def get_ydl_opts():
     return {
@@ -37,32 +47,29 @@ def get_ydl_opts():
         "outtmpl": "%(title)s.%(ext)s",
         "quiet": True,
         "noplaylist": True,
-
-        # كوكيز لليوتيوب (إن وجدت)
         "cookiefile": "cookies.txt" if os.path.exists("cookies.txt") else None,
 
-        # TikTok بدون علامة مائية
         "postprocessors": [{
             "key": "FFmpegVideoConvertor",
             "preferedformat": "mp4"
         }],
 
-        # دعم PO Token تلقائي ليوتيوب
+        # تمكين mweb client للـ PO Token
         "extractor_args": {
             "youtube": {
                 "player_client": "mweb"
             }
-        },
+        }
     }
 
 
 # ---------------------------
-# 🤖 Telegram Bot Handlers
+# 🤖 Handlers
 # ---------------------------
 def start_cmd(update, context):
     update.message.reply_text(
-        "🎬 مرحباً! أرسل أي رابط وسيتم تحميل الفيديو بأعلى جودة.\n\n"
-        "✓ YouTube\n✓ TikTok بدون علامة مائية\n✓ Instagram\n✓ Twitter (X)\n✓ Facebook\n✓ Reddit\n✓ Pinterest\nوغيرها…"
+        "🎬 أهلاً! أرسل أي رابط وسأحمّل لك الفيديو.\n\n"
+        "✓ YouTube\n✓ TikTok بدون علامة مائية\n✓ Instagram\n✓ Twitter\n✓ Facebook\n✓ Reddit\n✓ Pinterest"
     )
 
 
@@ -76,32 +83,30 @@ def download(update, context):
             filename = ydl.prepare_filename(info)
 
         update.message.reply_document(open(filename, "rb"))
-
     except Exception as e:
         update.message.reply_text(f"❌ حدث خطأ:\n{e}")
 
 
 # ---------------------------
-# 🚀 Webhook + Flask Runner
+# 🧠 Dispatcher
 # ---------------------------
-def start_bot():
-    updater = Updater(TOKEN, use_context=True)
-    dp = updater.dispatcher
-
-    dp.add_handler(CommandHandler("start", start_cmd))
-    dp.add_handler(MessageHandler(Filters.text, download))
-
-    updater.start_webhook(
-        listen="0.0.0.0",
-        port=PORT,
-        url_path=TOKEN,
-        webhook_url=f"{APP_URL}/{TOKEN}",
-    )
-
-    updater.idle()
+dispatcher = Dispatcher(bot, None, workers=4)
+dispatcher.add_handler(CommandHandler("start", start_cmd))
+dispatcher.add_handler(MessageHandler(Filters.text, download))
 
 
+# ---------------------------
+# 🚀 Set Webhook once
+# ---------------------------
+def set_webhook():
+    bot.delete_webhook()
+    bot.set_webhook(url=f"{APP_URL}/{TOKEN}")
+    print("Webhook set →", f"{APP_URL}/{TOKEN}")
+
+
+# ---------------------------
+# 🚀 Run Server
+# ---------------------------
 if __name__ == "__main__":
-    import threading
-    threading.Thread(target=start_bot).start()
+    set_webhook()
     app.run(host="0.0.0.0", port=PORT)
