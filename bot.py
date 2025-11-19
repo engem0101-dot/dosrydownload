@@ -2,15 +2,29 @@ import os
 import yt_dlp
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
 
-# نقرأ التوكن من Environment Variable داخل Render
-TOKEN = os.environ.get("BOT_TOKEN")
+TOKEN = os.environ.get("BOT_TOKEN")  # التوكن من Render
+
+# إعداد yt-dlp لتجاوز PO Token
+def get_ydl_opts(output):
+    return {
+        "outtmpl": output,
+        "merge_output_format": "mp4",
+        "format": "bestvideo+bestaudio/best",
+        "extractor_args": {
+            "youtube": {
+                "player_client": "mweb",          # نستخدم mweb client
+                "po_token_provider": "bgutil"     # تفعيل PO Token Provider
+            }
+        }
+    }
 
 def start(update, context):
     update.message.reply_text(
-        "🎥 *Download Bot Ready!*\n\n"
-        "أرسل رابط لأي فيديو (يوتيوب / تيكتوك / انستا / تويتر / شورتس)\n"
-        "وسأحمّله لك بأعلى جودة تلقائيًا 🔥 (1080p – 4K)\n\n"
-        "🎧 لتحميل صوت فقط MP3:\n"
+        "🎥 *YouTube Download Bot*\n\n"
+        "أرسل رابط فيديو من:\n"
+        "- YouTube\n- TikTok\n- Instagram\n- Twitter\n- Shorts\n\n"
+        "🔥 سيتم التحميل بأعلى جودة تلقائيًا.\n\n"
+        "🎧 لتحميل صوت فقط (MP3):\n"
         "`mp3 <الرابط>`",
         parse_mode="Markdown"
     )
@@ -19,34 +33,29 @@ def download_video(update, context):
     url = update.message.text.strip()
 
     if not url.startswith("http"):
-        update.message.reply_text("❌ *هذا ليس رابطًا صالحًا!*", parse_mode="Markdown")
+        update.message.reply_text("❌ هذا ليس رابطًا صالحًا.", parse_mode="Markdown")
         return
 
-    update.message.reply_text("⏳ *جاري التحميل…*", parse_mode="Markdown")
-
-    ydl_opts = {
-        "format": "bestvideo[ext=mp4]+bestaudio/best",
-        "outtmpl": "video.%(ext)s",
-        "merge_output_format": "mp4"
-    }
+    update.message.reply_text("⏳ *جاري تحميل الفيديو…*", parse_mode="Markdown")
 
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        opts = get_ydl_opts("video.%(ext)s")
+        with yt_dlp.YoutubeDL(opts) as ydl:
             ydl.download([url])
 
-        # ابحث عن الملف الناتج
         file = [f for f in os.listdir(".") if f.startswith("video")][0]
 
         update.message.reply_video(
             open(file, "rb"),
-            caption="✔️ *تم التحميل بنجاح!*",
+            caption="✔️ *تم التحميل!*",
             parse_mode="Markdown"
         )
 
         os.remove(file)
 
     except Exception as e:
-        update.message.reply_text(f"❌ *خطأ أثناء التحميل:*\n`{str(e)}`", parse_mode="Markdown")
+        update.message.reply_text(f"❌ *حدث خطأ أثناء التحميل:*\n`{e}`", parse_mode="Markdown")
+
 
 def download_mp3(update, context):
     parts = update.message.text.split()
@@ -55,34 +64,41 @@ def download_mp3(update, context):
         return
 
     url = parts[1]
-    update.message.reply_text("🎧 *جاري تحويل الصوت…*", parse_mode="Markdown")
-
-    ydl_opts = {
-        "format": "bestaudio/best",
-        "outtmpl": "audio.%(ext)s",
-        "postprocessors": [{
-            "key": "FFmpegExtractAudio",
-            "preferredcodec": "mp3",
-            "preferredquality": "192",
-        }]
-    }
+    update.message.reply_text("🎧 *جاري تحويل الصوت إلى MP3…*", parse_mode="Markdown")
 
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        opts = {
+            "format": "bestaudio/best",
+            "outtmpl": "audio.%(ext)s",
+            "postprocessors": [{
+                "key": "FFmpegExtractAudio",
+                "preferredcodec": "mp3",
+                "preferredquality": "192",
+            }],
+            "extractor_args": {
+                "youtube": {
+                    "player_client": "mweb",
+                    "po_token_provider": "bgutil"
+                }
+            }
+        }
+
+        with yt_dlp.YoutubeDL(opts) as ydl:
             ydl.download([url])
 
         file = [f for f in os.listdir(".") if f.startswith("audio")][0]
 
         update.message.reply_audio(
             open(file, "rb"),
-            caption="🎧 *تم استخراج الصوت MP3!*",
+            caption="🎧 *تم استخراج الصوت بنجاح!*",
             parse_mode="Markdown"
         )
 
         os.remove(file)
 
     except Exception as e:
-        update.message.reply_text(f"❌ *خطأ أثناء التحويل:*\n`{str(e)}`", parse_mode="Markdown")
+        update.message.reply_text(f"❌ *حدث خطأ أثناء التحويل:*\n`{e}`", parse_mode="Markdown")
+
 
 def main():
     updater = Updater(TOKEN, use_context=True)
