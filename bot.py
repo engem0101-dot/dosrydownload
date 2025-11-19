@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 def ydl_opts(output_path):
     return {
-        "format": "best/bestvideo+bestaudio/best",
+        "format": "bv*+ba/bestvideo+bestaudio/best/mp4",
         "outtmpl": output_path,
         "merge_output_format": "mp4",
         "noplaylist": True,
@@ -46,6 +46,7 @@ def ydl_opts(output_path):
             }
         }
     }
+
 
 # ---------------------------
 # 🧹 Auto-delete files
@@ -156,3 +157,4 @@ def run_bot():
 if __name__ == "__main__":
     threading.Thread(target=run_bot, daemon=True).start()
     app.run(host="0.0.0.0", port=PORT)
+
