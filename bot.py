@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 def ydl_opts(output_path):
     return {
-        "format": "bv*[ext=mp4]+ba[ext=m4a]/bv*+ba/bestvideo+bestaudio/best",
+        "format": "bv*[ext=mp4]+ba[ext=m4a]/bv*+ba/best",
         "outtmpl": output_path,
         "merge_output_format": "mp4",
         "noplaylist": True,
@@ -158,5 +158,6 @@ def run_bot():
 if __name__ == "__main__":
     threading.Thread(target=run_bot, daemon=True).start()
     app.run(host="0.0.0.0", port=PORT)
+
 
 
